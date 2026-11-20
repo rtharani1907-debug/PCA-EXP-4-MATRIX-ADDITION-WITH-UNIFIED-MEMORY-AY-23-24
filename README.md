@@ -39,10 +39,128 @@ Allocate Host Memory
 22.	Reset the device using cudaDeviceReset and return from the main function.
 
 ## PROGRAM:
-TYPE YOUR CODE HERE
+```
+
+%%writefile unifmem1.cu
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <cuda_runtime.h>
+
+#define CHECK(call) \
+{ \
+    cudaError_t err = call; \
+    if (err != cudaSuccess) { \
+        printf("CUDA Error: %s\n", cudaGetErrorString(err)); \
+        exit(1); \
+    } \
+}
+
+void initialData(float *data, int size)
+{
+    for (int i = 0; i < size; i++)
+        data[i] = (float)(rand() % 10);
+}
+
+void sumMatrixOnHost(float *A, float *B, float *C, int N)
+{
+    for (int i = 0; i < N; i++)
+        C[i] = A[i] + B[i];
+}
+
+__global__ void sumMatrixOnGPU(float *A, float *B, float *C, int N)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx < N)
+        C[idx] = A[idx] + B[idx];
+}
+
+int main()
+{
+    int nx = 1024;
+    int ny = 1024;
+    int N = nx * ny;
+    size_t bytes = N * sizeof(float);
+
+    float *A, *B, *C, *hostRef;
+
+    printf("========================================\n");
+    printf(" Matrix Addition Using CUDA Unified Memory\n");
+    printf("========================================\n");
+
+    printf("Matrix Size: %d x %d\n", nx, ny);
+
+    CHECK(cudaMallocManaged(&A, bytes));
+    CHECK(cudaMallocManaged(&B, bytes));
+    CHECK(cudaMallocManaged(&C, bytes));
+    CHECK(cudaMallocManaged(&hostRef, bytes));
+
+    printf("Unified Memory allocated successfully.\n");
+
+    srand(123);
+    initialData(A, N);
+    initialData(B, N);
+
+    sumMatrixOnHost(A, B, hostRef, N);
+
+    printf("CPU matrix addition completed.\n");
+
+    int threads = 256;
+    int blocks = (N + threads - 1) / threads;
+
+    printf("Grid: %d\n", blocks);
+    printf("Block: %d\n", threads);
+
+    printf("Running matrix addition on GPU...\n");
+
+    sumMatrixOnGPU<<<blocks, threads>>>(A, B, C, N);
+
+    CHECK(cudaGetLastError());
+    CHECK(cudaDeviceSynchronize());
+
+    printf("GPU matrix addition completed.\n");
+
+    bool match = true;
+
+    for (int i = 0; i < N; i++)
+    {
+        if (fabs(hostRef[i] - C[i]) > 1e-5)
+        {
+            match = false;
+            printf("Mismatch at index %d\n", i);
+            break;
+        }
+    }
+
+    if (match)
+        printf("Arrays match successfully!\n");
+    else
+        printf("Arrays do not match!\n");
+
+    printf("\nFirst 10 Results:\n");
+
+    for (int i = 0; i < 10; i++)
+        printf("%.2f + %.2f = %.2f\n", A[i], B[i], C[i]);
+
+    CHECK(cudaFree(A));
+    CHECK(cudaFree(B));
+    CHECK(cudaFree(C));
+    CHECK(cudaFree(hostRef));
+
+    CHECK(cudaDeviceReset());
+
+    printf("\nProgram completed successfully!\n");
+
+    return 0;
+}
+
+```
 
 ## OUTPUT:
-SHOW YOUR OUTPUT HERE
+
+<img width="1776" height="647" alt="Screenshot 2026-11-20 182033" src="https://github.com/user-attachments/assets/bb434488-d108-4e0d-b3eb-a66b1b356da5" />
 
 ## RESULT:
-Thus the program has been executed by using unified memory. It is observed that removing memset function has given less/more_______________time.
+Thus the program has been executed by using unified memory. It is observed that removing memset function has given less time.
